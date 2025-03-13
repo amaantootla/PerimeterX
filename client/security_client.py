@@ -3,6 +3,7 @@ from datetime import datetime
 from pathlib import Path
 import cv2, zmq
 from ultralytics import YOLO
+from .webrtc_stream import BufferedVideoStreamTrack
 
 
 class SecurityClient:
@@ -13,6 +14,7 @@ class SecurityClient:
         self.alert_port = alert_port
         self.running = False
         self.model_path = Path('home.pt')
+        self.video_stream = BufferedVideoStreamTrack()
         
         
     def start(self):
@@ -123,7 +125,7 @@ class SecurityClient:
             print("✅ Base model downloaded successfully")
 
 
-    def run_inference(self, source=0, person_conf=0.5, home_conf=0.03):
+    def run_inference(self, person_conf=0.5, home_conf=0.03):
         print("Waiting for home.pt model to be available...")
         while not Path('home.pt').exists():
             time.sleep(1)
@@ -135,14 +137,11 @@ class SecurityClient:
             base_model = YOLO('yolo11n.pt')
             home_model = YOLO('home.pt')
             
-            cap = cv2.VideoCapture(source)
-            print("🎥 Starting inference...")
-            
-            while self.running and cap.isOpened():
-                success, frame = cap.read()
-                if not success:
-                    print("Failed to get frame")
-                    time.sleep(1)
+            print("Starting inference...")
+            while self.running:
+                frame = self.video_stream.get_current_frame()
+                if frame is None:
+                    time.sleep(0.1)
                     continue
                 
                 person_results = base_model.predict(frame, classes=[0], conf=person_conf, verbose=False)
@@ -151,17 +150,16 @@ class SecurityClient:
                     
                     if len(person_results[0].boxes) > len(home_results[0].boxes):
                         confidence = 1.0 - (len(home_results[0].boxes) / len(person_results[0].boxes))
+                        self.video_stream.start_recording()
                         self.send_alert("Camera Feed", confidence)
                         time.sleep(10)
                 
                 time.sleep(0.1)
             
-            cap.release()
         except Exception as e:
-            print(f"❌ Error in inference: {e}")
-            print("⚠️ Retrying in 5 seconds...")
+            print(f"Error in inference: {e}")
             time.sleep(5)
-            self.run_inference(source, person_conf, home_conf)
+            self.run_inference(person_conf, home_conf)
 
 
 if __name__ == "__main__":
