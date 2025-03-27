@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "5555:5555"
+      - "5556:5556"
+      - "8080:8080"
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    environment:
+      - DEVICE_ID=client_01
+    depends_on:
+      - server
